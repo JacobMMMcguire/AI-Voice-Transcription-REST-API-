@@ -1,4 +1,4 @@
-package restAPIproject;
+package RestAPIproject;
 
 public class Transcript {
 
