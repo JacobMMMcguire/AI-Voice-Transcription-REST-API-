@@ -1,22 +1,35 @@
-# Example of custom Java runtime using jlink in a multi-stage container build
-FROM eclipse-temurin:21 as jre-build
+# --- Stage 1: Build the Application (Builder Stage) ---
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
 
-# Create a custom Java runtime
+WORKDIR /app
+# Copy the project files (pom.xml first to optimize layer caching)
+COPY pom.xml .
+
+# Download dependencies
+RUN mvn dependency:go-offline 
+
+COPY src/ ./src/
+RUN mvn package
+
+# --- Stage 2: Create the Custom Runtime (Final Image) ---
+FROM eclipse-temurin:21 AS jre-build
+
 RUN $JAVA_HOME/bin/jlink \
-         --add-modules java.base \
+         --add-modules java.base,java.net.http,jdk.httpserver,java.logging,java.management,jdk.crypto.ec,java.security.jgss \
          --strip-debug \
          --no-man-pages \
          --no-header-files \
          --compress=2 \
          --output /javaruntime
 
-# Define your base image
 FROM debian:buster-slim
 ENV JAVA_HOME=/opt/java/openjdk
-ENV PATH "${JAVA_HOME}/bin:${PATH}"
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
 COPY --from=jre-build /javaruntime $JAVA_HOME
 
-# Continue with your application deployment
-RUN mkdir /opt/appq
-COPY restAPIproject.jar /opt/app
-CMD ["java", "-jar", "/opt/app/restAPIproject.jar"]
+RUN mkdir /opt/app
+WORKDIR /opt/app
+
+COPY --from=builder /app/target/restAPIproject-shaded.jar .
+
+CMD ["java", "-cp", "/opt/app/restAPIproject-shaded.jar", "RestAPIproject.RestAPI"]
